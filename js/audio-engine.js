@@ -115,9 +115,16 @@ DAW.AudioEngine = (function () {
     return isRecording;
   }
 
+  function getMasterGain() {
+    initGains();
+    return masterGain;
+  }
+
   return {
     getContext: getContext,
     ensureResumed: ensureResumed,
+    initGains: initGains,
+    getMasterGain: getMasterGain,
     startRecording: startRecording,
     stopRecording: stopRecording,
     getRecordedBuffer: getRecordedBuffer,
