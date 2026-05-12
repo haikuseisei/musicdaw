@@ -3,79 +3,552 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI DAW - Phase 0 Prototype</title>
+  <title>AI DAW - Digital Audio Workstation</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header>
-    <h1>AI DAW <span class="badge">Phase 0</span></h1>
+  <!-- ===== HEADER / TRANSPORT BAR ===== -->
+  <header id="header">
+    <div id="logo">
+      <h1>AI DAW <span class="badge">Phase 0</span></h1>
+    </div>
+
     <div id="transport">
-      <button id="btn-record" class="transport-btn" title="Recording">&#9679; REC</button>
-      <button id="btn-play" class="transport-btn" disabled title="Play">&#9654; PLAY</button>
-      <button id="btn-stop" class="transport-btn" disabled title="Stop">&#9632; STOP</button>
-      <label class="bpm-control">
-        BPM
-        <input id="bpm" type="number" value="120" min="60" max="200" step="1">
+      <button id="btn-rewind" class="transport-btn small" title="Rewind">&#9664;&#9664;</button>
+      <button id="btn-stop" class="transport-btn" title="Stop">&#9632;</button>
+      <button id="btn-play" class="transport-btn" title="Play">&#9654;</button>
+      <button id="btn-record" class="transport-btn rec-btn" title="Record">&#9679;</button>
+      <button id="btn-loop" class="transport-btn small toggle-btn" title="Loop">&#8635;</button>
+
+      <div class="transport-divider"></div>
+
+      <div class="transport-info">
+        <div class="transport-position" id="transport-position">001 : 1 : 000</div>
+        <div class="transport-time" id="transport-time">0:00.000</div>
+      </div>
+
+      <div class="transport-divider"></div>
+
+      <label class="transport-param">
+        <span>BPM</span>
+        <input id="bpm" type="number" value="120" min="20" max="300" step="1">
       </label>
-      <span id="time-display">0:00</span>
+      <label class="transport-param">
+        <span>Time Sig</span>
+        <select id="time-sig">
+          <option value="4/4">4/4</option>
+          <option value="3/4">3/4</option>
+          <option value="6/8">6/8</option>
+          <option value="2/4">2/4</option>
+          <option value="5/4">5/4</option>
+          <option value="7/8">7/8</option>
+        </select>
+      </label>
+
+      <div class="transport-divider"></div>
+
+      <button id="btn-metronome" class="transport-btn small toggle-btn" title="Metronome">&#9834;</button>
+      <button id="btn-countin" class="transport-btn small toggle-btn" title="Count-in">CI</button>
+      <label class="transport-param">
+        <span>Snap</span>
+        <select id="snap-value">
+          <option value="1">Bar</option>
+          <option value="1/2">1/2</option>
+          <option value="1/4" selected>1/4</option>
+          <option value="1/8">1/8</option>
+          <option value="1/16">1/16</option>
+          <option value="1/32">1/32</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="header-tools">
+      <button id="btn-undo" class="transport-btn small" title="Undo">&#8630;</button>
+      <button id="btn-redo" class="transport-btn small" title="Redo">&#8631;</button>
+      <div class="transport-divider"></div>
+      <select id="tool-select" title="Edit Tool">
+        <option value="select">Select</option>
+        <option value="draw">Draw</option>
+        <option value="erase">Erase</option>
+        <option value="slice">Slice</option>
+        <option value="mute">Mute</option>
+      </select>
     </div>
   </header>
 
-  <main>
-    <section class="track" id="track-recording">
-      <div class="track-header">
-        <span class="track-icon">&#127928;</span>
-        <span class="track-name">Recording</span>
-        <input type="range" class="vol-slider" id="vol-recording" min="0" max="1" step="0.01" value="0.8">
+  <!-- ===== TAB BAR ===== -->
+  <nav id="tab-bar">
+    <button class="tab active" data-view="arrange">Arrange</button>
+    <button class="tab" data-view="mix">Mix</button>
+    <button class="tab" data-view="pianoroll">Piano Roll</button>
+    <button class="tab" data-view="session">Session</button>
+    <button class="tab" data-view="drumpad">Drum Pad</button>
+    <button class="tab" data-view="edit">Edit</button>
+    <div class="tab-spacer"></div>
+    <button id="btn-export" class="tab tab-action">Export</button>
+    <button id="btn-save" class="tab tab-action">Save</button>
+  </nav>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main id="main-content">
+
+    <!-- ARRANGE VIEW -->
+    <section id="view-arrange" class="view active">
+      <div class="view-toolbar">
+        <button id="btn-add-audio-track" class="toolbar-btn" title="Add Audio Track">+ Audio</button>
+        <button id="btn-add-midi-track" class="toolbar-btn" title="Add MIDI Track">+ MIDI</button>
+        <button id="btn-add-bus" class="toolbar-btn" title="Add Bus">+ Bus</button>
+        <div class="toolbar-spacer"></div>
+        <label class="toolbar-param">
+          <span>H-Zoom</span>
+          <input id="h-zoom" type="range" min="0.1" max="10" step="0.1" value="1">
+        </label>
+        <label class="toolbar-param">
+          <span>V-Zoom</span>
+          <input id="v-zoom" type="range" min="0.5" max="3" step="0.1" value="1">
+        </label>
       </div>
-      <div class="track-lane">
-        <canvas id="waveform-recording"></canvas>
-        <div id="recording-placeholder" class="placeholder">Click REC to start recording</div>
+      <div id="arrange-container" class="canvas-container">
+        <canvas id="timeline-canvas"></canvas>
+        <div id="arrange-placeholder" class="placeholder">Add tracks and start recording to begin</div>
       </div>
     </section>
 
-    <section class="track" id="track-chords">
-      <div class="track-header">
-        <span class="track-icon">&#9835;</span>
-        <span class="track-name">Chords</span>
+    <!-- MIX VIEW -->
+    <section id="view-mix" class="view">
+      <div class="view-toolbar">
+        <button id="btn-show-sends" class="toolbar-btn toggle-btn">Sends</button>
+        <button id="btn-show-inserts" class="toolbar-btn toggle-btn">Inserts</button>
+        <button id="btn-show-eq" class="toolbar-btn toggle-btn active">EQ</button>
+        <div class="toolbar-spacer"></div>
+        <button id="btn-master-bypass" class="toolbar-btn">Master Bypass</button>
       </div>
-      <div class="track-lane">
-        <canvas id="chord-display"></canvas>
-        <div id="chords-placeholder" class="placeholder">Analyze recording to detect chords</div>
-      </div>
-    </section>
-
-    <section class="track" id="track-drums">
-      <div class="track-header">
-        <span class="track-icon">&#129345;</span>
-        <span class="track-name">Drums</span>
-        <input type="range" class="vol-slider" id="vol-drums" min="0" max="1" step="0.01" value="0.7">
-      </div>
-      <div class="track-lane">
-        <canvas id="drum-display"></canvas>
-        <div id="drums-placeholder" class="placeholder">Generate drums after chord detection</div>
+      <div id="mix-container" class="canvas-container">
+        <canvas id="mixer-canvas"></canvas>
       </div>
     </section>
 
-    <section id="actions">
-      <button id="btn-analyze" class="action-btn" disabled>Analyze Chords</button>
-      <button id="btn-generate-drums" class="action-btn" disabled>Generate Drums</button>
-      <select id="drum-style">
-        <option value="rock">Rock</option>
-        <option value="pop">Pop</option>
-        <option value="ballad">Ballad</option>
-        <option value="funk">Funk</option>
-      </select>
+    <!-- PIANO ROLL VIEW -->
+    <section id="view-pianoroll" class="view">
+      <div class="view-toolbar">
+        <button class="toolbar-btn active" data-tool="select">Select</button>
+        <button class="toolbar-btn" data-tool="draw">Draw</button>
+        <button class="toolbar-btn" data-tool="erase">Erase</button>
+        <button class="toolbar-btn" data-tool="velocity">Velocity</button>
+        <div class="toolbar-spacer"></div>
+        <label class="toolbar-param">
+          <span>Grid</span>
+          <select id="pr-grid">
+            <option value="1/4">1/4</option>
+            <option value="1/8" selected>1/8</option>
+            <option value="1/16">1/16</option>
+            <option value="1/32">1/32</option>
+            <option value="1/4T">1/4T</option>
+            <option value="1/8T">1/8T</option>
+          </select>
+        </label>
+        <label class="toolbar-param">
+          <span>Scale</span>
+          <select id="pr-scale">
+            <option value="chromatic">Chromatic</option>
+            <option value="major">Major</option>
+            <option value="minor">Minor</option>
+            <option value="dorian">Dorian</option>
+            <option value="mixolydian">Mixolydian</option>
+            <option value="pentatonic">Pentatonic</option>
+            <option value="blues">Blues</option>
+          </select>
+        </label>
+        <label class="toolbar-param">
+          <span>Root</span>
+          <select id="pr-root">
+            <option value="C">C</option><option value="C#">C#</option>
+            <option value="D">D</option><option value="D#">D#</option>
+            <option value="E">E</option><option value="F">F</option>
+            <option value="F#">F#</option><option value="G">G</option>
+            <option value="G#">G#</option><option value="A">A</option>
+            <option value="A#">A#</option><option value="B">B</option>
+          </select>
+        </label>
+        <div class="toolbar-spacer"></div>
+        <button id="btn-quantize" class="toolbar-btn">Quantize</button>
+        <button id="btn-humanize" class="toolbar-btn">Humanize</button>
+      </div>
+      <div id="pianoroll-container" class="canvas-container">
+        <canvas id="pianoroll-canvas"></canvas>
+        <div id="pianoroll-placeholder" class="placeholder">Select a MIDI clip to edit</div>
+      </div>
     </section>
 
-    <section id="status-bar">
-      <span id="status-message">Ready</span>
+    <!-- SESSION VIEW -->
+    <section id="view-session" class="view">
+      <div class="view-toolbar">
+        <button id="btn-add-scene" class="toolbar-btn">+ Scene</button>
+        <button id="btn-stop-all" class="toolbar-btn accent">Stop All</button>
+        <div class="toolbar-spacer"></div>
+        <label class="toolbar-param">
+          <span>Q Launch</span>
+          <select id="session-quantize">
+            <option value="1">1 Bar</option>
+            <option value="1/2">1/2</option>
+            <option value="1/4">1/4</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+      </div>
+      <div id="session-container" class="canvas-container">
+        <canvas id="session-canvas"></canvas>
+      </div>
+    </section>
+
+    <!-- DRUM PAD / STEP SEQUENCER VIEW -->
+    <section id="view-drumpad" class="view">
+      <div class="view-toolbar">
+        <label class="toolbar-param">
+          <span>Kit</span>
+          <select id="drum-kit-select">
+            <option value="acoustic">Acoustic</option>
+            <option value="electronic">Electronic</option>
+            <option value="hiphop">Hip-Hop</option>
+            <option value="latin">Latin</option>
+          </select>
+        </label>
+        <label class="toolbar-param">
+          <span>Steps</span>
+          <select id="drum-steps"><option value="8">8</option><option value="16" selected>16</option><option value="32">32</option></select>
+        </label>
+        <label class="toolbar-param">
+          <span>Style</span>
+          <select id="drum-style">
+            <option value="rock">Rock</option><option value="pop">Pop</option>
+            <option value="ballad">Ballad</option><option value="funk">Funk</option>
+            <option value="jazz">Jazz</option><option value="hiphop">Hip-Hop</option>
+            <option value="techno">Techno</option><option value="reggae">Reggae</option>
+            <option value="latin">Latin</option><option value="shuffle">Shuffle</option>
+          </select>
+        </label>
+        <label class="toolbar-param">
+          <span>Swing</span>
+          <input id="drum-swing" type="range" min="0" max="100" step="1" value="0">
+        </label>
+        <div class="toolbar-spacer"></div>
+        <button id="btn-drum-clear" class="toolbar-btn">Clear</button>
+        <button id="btn-drum-random" class="toolbar-btn">Random</button>
+        <button id="btn-drum-load-pattern" class="toolbar-btn">Load Style</button>
+        <label class="toolbar-param">
+          <span>Bank</span>
+          <select id="drum-pattern-bank">
+            <option value="A">A</option><option value="B">B</option>
+            <option value="C">C</option><option value="D">D</option>
+          </select>
+        </label>
+      </div>
+      <div id="drumpad-container" class="canvas-container">
+        <canvas id="step-sequencer-canvas"></canvas>
+      </div>
+    </section>
+
+    <!-- EDIT VIEW (Audio Editor) -->
+    <section id="view-edit" class="view">
+      <div class="view-toolbar">
+        <button id="btn-edit-cut" class="toolbar-btn">Cut</button>
+        <button id="btn-edit-copy" class="toolbar-btn">Copy</button>
+        <button id="btn-edit-paste" class="toolbar-btn">Paste</button>
+        <button id="btn-edit-delete" class="toolbar-btn">Delete</button>
+        <div class="toolbar-spacer"></div>
+        <button id="btn-edit-normalize" class="toolbar-btn">Normalize</button>
+        <button id="btn-edit-reverse" class="toolbar-btn">Reverse</button>
+        <button id="btn-edit-fadein" class="toolbar-btn">Fade In</button>
+        <button id="btn-edit-fadeout" class="toolbar-btn">Fade Out</button>
+        <button id="btn-edit-silence" class="toolbar-btn">Silence</button>
+        <div class="toolbar-spacer"></div>
+        <button id="btn-edit-timestretch" class="toolbar-btn">Time Stretch</button>
+        <button id="btn-edit-pitchshift" class="toolbar-btn">Pitch Shift</button>
+        <button id="btn-edit-denoise" class="toolbar-btn">Denoise</button>
+        <button id="btn-edit-phase" class="toolbar-btn">Phase Invert</button>
+      </div>
+      <div id="edit-container" class="canvas-container">
+        <canvas id="edit-canvas"></canvas>
+        <div id="edit-placeholder" class="placeholder">Select an audio clip to edit</div>
+      </div>
     </section>
   </main>
 
+  <!-- ===== BOTTOM PANEL ===== -->
+  <div id="bottom-panel">
+    <div id="bottom-panel-header">
+      <button class="bottom-tab active" data-panel="instrument">Instrument</button>
+      <button class="bottom-tab" data-panel="effects">Effects</button>
+      <button class="bottom-tab" data-panel="automation">Automation</button>
+      <button class="bottom-tab" data-panel="chords">Chords</button>
+      <button class="bottom-tab" data-panel="meters">Meters</button>
+      <div class="tab-spacer"></div>
+      <button id="btn-toggle-bottom" class="bottom-tab toggle-panel-btn">&#9660;</button>
+    </div>
+
+    <div id="bottom-panel-content">
+      <!-- INSTRUMENT PANEL -->
+      <div id="panel-instrument" class="bottom-view active">
+        <div class="instrument-selector">
+          <label>
+            <span>Instrument</span>
+            <select id="instrument-type">
+              <option value="none">-- None --</option>
+              <option value="synth">Synthesizer</option>
+              <option value="fm-synth">FM Synth</option>
+              <option value="wavetable">Wavetable</option>
+              <option value="sampler">Sampler</option>
+              <option value="drums">Drum Machine</option>
+            </select>
+          </label>
+          <label>
+            <span>Preset</span>
+            <select id="instrument-preset">
+              <option value="init">Init</option>
+              <option value="pad">Pad</option>
+              <option value="lead">Lead</option>
+              <option value="bass">Bass</option>
+              <option value="pluck">Pluck</option>
+              <option value="strings">Strings</option>
+              <option value="brass">Brass</option>
+              <option value="keys">Keys</option>
+              <option value="fm-bell">FM Bell</option>
+              <option value="fm-bass">FM Bass</option>
+              <option value="wobble">Wobble</option>
+            </select>
+          </label>
+        </div>
+        <div id="synth-controls" class="param-grid">
+          <div class="param-group">
+            <h3>Oscillator 1</h3>
+            <label><span>Type</span><select id="osc1-type"><option>sine</option><option selected>sawtooth</option><option>square</option><option>triangle</option></select></label>
+            <label><span>Octave</span><input type="range" id="osc1-oct" min="-2" max="2" step="1" value="0"></label>
+            <label><span>Detune</span><input type="range" id="osc1-detune" min="-100" max="100" step="1" value="0"></label>
+            <label><span>Level</span><input type="range" id="osc1-level" min="0" max="1" step="0.01" value="0.8"></label>
+          </div>
+          <div class="param-group">
+            <h3>Oscillator 2</h3>
+            <label><span>Type</span><select id="osc2-type"><option>sine</option><option>sawtooth</option><option selected>square</option><option>triangle</option></select></label>
+            <label><span>Octave</span><input type="range" id="osc2-oct" min="-2" max="2" step="1" value="0"></label>
+            <label><span>Detune</span><input type="range" id="osc2-detune" min="-100" max="100" step="1" value="7"></label>
+            <label><span>Level</span><input type="range" id="osc2-level" min="0" max="1" step="0.01" value="0.5"></label>
+          </div>
+          <div class="param-group">
+            <h3>Filter</h3>
+            <label><span>Type</span><select id="filter-type"><option selected>lowpass</option><option>highpass</option><option>bandpass</option><option>notch</option></select></label>
+            <label><span>Cutoff</span><input type="range" id="filter-cutoff" min="20" max="20000" step="1" value="5000"></label>
+            <label><span>Resonance</span><input type="range" id="filter-q" min="0.1" max="30" step="0.1" value="1"></label>
+            <label><span>Env Amt</span><input type="range" id="filter-env" min="0" max="10000" step="1" value="2000"></label>
+          </div>
+          <div class="param-group">
+            <h3>Amp Envelope</h3>
+            <label><span>Attack</span><input type="range" id="amp-a" min="0.001" max="5" step="0.001" value="0.01"></label>
+            <label><span>Decay</span><input type="range" id="amp-d" min="0.001" max="5" step="0.001" value="0.3"></label>
+            <label><span>Sustain</span><input type="range" id="amp-s" min="0" max="1" step="0.01" value="0.7"></label>
+            <label><span>Release</span><input type="range" id="amp-r" min="0.001" max="10" step="0.001" value="0.5"></label>
+          </div>
+          <div class="param-group">
+            <h3>Filter Envelope</h3>
+            <label><span>Attack</span><input type="range" id="flt-a" min="0.001" max="5" step="0.001" value="0.01"></label>
+            <label><span>Decay</span><input type="range" id="flt-d" min="0.001" max="5" step="0.001" value="0.5"></label>
+            <label><span>Sustain</span><input type="range" id="flt-s" min="0" max="1" step="0.01" value="0.3"></label>
+            <label><span>Release</span><input type="range" id="flt-r" min="0.001" max="10" step="0.001" value="0.5"></label>
+          </div>
+          <div class="param-group">
+            <h3>LFO</h3>
+            <label><span>Rate</span><input type="range" id="lfo-rate" min="0.1" max="20" step="0.1" value="4"></label>
+            <label><span>Depth</span><input type="range" id="lfo-depth" min="0" max="1" step="0.01" value="0"></label>
+            <label><span>Dest</span><select id="lfo-dest"><option>pitch</option><option selected>filter</option><option>amplitude</option><option>pan</option></select></label>
+            <label><span>Wave</span><select id="lfo-wave"><option selected>sine</option><option>triangle</option><option>square</option><option>sawtooth</option></select></label>
+          </div>
+          <div class="param-group">
+            <h3>Voice</h3>
+            <label><span>Glide</span><input type="range" id="glide" min="0" max="500" step="1" value="0"></label>
+            <label><span>Unison</span><input type="range" id="unison" min="1" max="8" step="1" value="1"></label>
+            <label><span>Spread</span><input type="range" id="unison-spread" min="0" max="50" step="1" value="10"></label>
+            <label><span>Sub</span><input type="range" id="sub-level" min="0" max="1" step="0.01" value="0"></label>
+          </div>
+          <div class="param-group">
+            <h3>Arpeggiator</h3>
+            <label><span>On</span><input type="checkbox" id="arp-on"></label>
+            <label><span>Pattern</span><select id="arp-pattern"><option>up</option><option>down</option><option>upDown</option><option>random</option></select></label>
+            <label><span>Rate</span><select id="arp-rate"><option>1/4</option><option selected>1/8</option><option>1/16</option><option>1/8T</option><option>1/16T</option></select></label>
+            <label><span>Octaves</span><input type="range" id="arp-octaves" min="1" max="4" step="1" value="1"></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- EFFECTS PANEL -->
+      <div id="panel-effects" class="bottom-view">
+        <div class="effects-chain">
+          <div class="effects-header">
+            <select id="add-effect-type">
+              <option value="">+ Add Effect</option>
+              <option value="eq">Parametric EQ</option>
+              <option value="compressor">Compressor</option>
+              <option value="reverb">Reverb</option>
+              <option value="delay">Delay</option>
+              <option value="chorus">Chorus</option>
+              <option value="phaser">Phaser</option>
+              <option value="saturation">Saturation</option>
+              <option value="gate">Noise Gate</option>
+              <option value="limiter">Limiter</option>
+              <option value="stereoImager">Stereo Imager</option>
+            </select>
+          </div>
+          <div id="effects-slots">
+            <div class="effect-placeholder">No effects loaded</div>
+          </div>
+        </div>
+        <div id="effect-editor">
+          <canvas id="effect-display" width="400" height="200"></canvas>
+        </div>
+      </div>
+
+      <!-- AUTOMATION PANEL -->
+      <div id="panel-automation" class="bottom-view">
+        <div class="auto-controls">
+          <select id="auto-param">
+            <option value="volume">Volume</option>
+            <option value="pan">Pan</option>
+            <option value="filterCutoff">Filter Cutoff</option>
+            <option value="send1">Send 1</option>
+            <option value="send2">Send 2</option>
+          </select>
+          <button id="btn-auto-read" class="toolbar-btn toggle-btn">Read</button>
+          <button id="btn-auto-write" class="toolbar-btn toggle-btn">Write</button>
+          <button id="btn-auto-clear" class="toolbar-btn">Clear</button>
+        </div>
+        <div id="auto-canvas-wrap" class="canvas-container" style="height:150px">
+          <canvas id="automation-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- CHORDS PANEL -->
+      <div id="panel-chords" class="bottom-view">
+        <div class="chord-controls">
+          <button id="btn-analyze-chords" class="toolbar-btn">Analyze Chords</button>
+          <button id="btn-gen-drums" class="toolbar-btn">Generate Drums</button>
+        </div>
+        <div id="chord-display-wrap" class="canvas-container" style="height:120px">
+          <canvas id="chord-display"></canvas>
+        </div>
+      </div>
+
+      <!-- METERS PANEL -->
+      <div id="panel-meters" class="bottom-view">
+        <div id="meters-container">
+          <div class="meter-section">
+            <h3>Output</h3>
+            <canvas id="meter-output" width="120" height="180"></canvas>
+          </div>
+          <div class="meter-section">
+            <h3>Spectrum</h3>
+            <canvas id="meter-spectrum" width="300" height="180"></canvas>
+          </div>
+          <div class="meter-section">
+            <h3>Phase</h3>
+            <canvas id="meter-goniometer" width="180" height="180"></canvas>
+          </div>
+          <div class="meter-section">
+            <h3>Loudness</h3>
+            <div class="lufs-display">
+              <div class="lufs-value" id="lufs-integrated">-14.0 LUFS</div>
+              <div class="lufs-label">Integrated</div>
+              <div class="lufs-value" id="lufs-shortterm">-12.0 LUFS</div>
+              <div class="lufs-label">Short-term</div>
+              <div class="lufs-value" id="lufs-peak">-1.0 dBTP</div>
+              <div class="lufs-label">True Peak</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== VIRTUAL KEYBOARD ===== -->
+  <div id="virtual-keyboard" class="collapsed">
+    <button id="btn-toggle-keyboard" class="keyboard-toggle">Keys</button>
+    <div id="keyboard-keys"></div>
+    <div class="keyboard-controls">
+      <label><span>Oct</span><input type="number" id="kb-octave" value="4" min="0" max="8" step="1"></label>
+      <label><span>Vel</span><input type="range" id="kb-velocity" min="1" max="127" value="100"></label>
+    </div>
+  </div>
+
+  <!-- ===== STATUS BAR ===== -->
+  <footer id="status-bar">
+    <span id="status-message">Ready</span>
+    <div class="status-right">
+      <span id="status-cpu">CPU: 0%</span>
+      <span id="status-midi">MIDI: --</span>
+      <span id="status-sr">44100 Hz</span>
+    </div>
+  </footer>
+
+  <!-- ===== EXPORT MODAL ===== -->
+  <div id="modal-export" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Export</h2>
+        <button class="modal-close" id="btn-close-export">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label><span>Format</span>
+          <select id="export-format">
+            <option value="wav16">WAV (16-bit)</option>
+            <option value="wav24">WAV (24-bit)</option>
+            <option value="stems">STEM Export</option>
+            <option value="midi">MIDI</option>
+            <option value="project">Project File</option>
+          </select>
+        </label>
+        <label><span>Sample Rate</span>
+          <select id="export-sr">
+            <option value="44100">44100 Hz</option>
+            <option value="48000">48000 Hz</option>
+            <option value="96000">96000 Hz</option>
+          </select>
+        </label>
+        <label><span>Normalize</span><input type="checkbox" id="export-normalize"></label>
+        <label><span>Dither</span><input type="checkbox" id="export-dither" checked></label>
+        <label><span>Range</span>
+          <select id="export-range">
+            <option value="all">Entire Project</option>
+            <option value="loop">Loop Region</option>
+            <option value="selection">Selection</option>
+          </select>
+        </label>
+        <button id="btn-do-export" class="action-btn primary">Export</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCRIPTS ===== -->
   <script src="js/audio-engine.js"></script>
-  <script src="js/chord-detector.js"></script>
+  <script src="js/transport.js"></script>
+  <script src="js/track-manager.js"></script>
+  <script src="js/clip.js"></script>
+  <script src="js/automation.js"></script>
+  <script src="js/midi-engine.js"></script>
+  <script src="js/effects.js"></script>
+  <script src="js/mixer.js"></script>
+  <script src="js/mastering.js"></script>
+  <script src="js/recorder.js"></script>
+  <script src="js/synth.js"></script>
+  <script src="js/sampler.js"></script>
   <script src="js/drum-machine.js"></script>
+  <script src="js/arpeggiator.js"></script>
+  <script src="js/chord-detector.js"></script>
+  <script src="js/audio-editor.js"></script>
+  <script src="js/export-engine.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/piano-roll.js"></script>
+  <script src="js/mixer-view.js"></script>
+  <script src="js/session-view.js"></script>
+  <script src="js/step-sequencer.js"></script>
+  <script src="js/meter-bridge.js"></script>
   <script src="js/waveform-renderer.js"></script>
   <script src="js/app.js"></script>
 </body>

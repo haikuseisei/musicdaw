@@ -2,232 +2,575 @@ var DAW = DAW || {};
 
 DAW.App = (function () {
   var state = {
-    hasRecording: false,
-    chords: null,
-    drumData: null,
-    isPlaying: false,
-    playStartTime: 0,
+    currentView: 'arrange',
+    selectedTrackId: null,
+    selectedClipId: null,
+    isInitialized: false,
     animFrameId: null,
-    totalDuration: 0
+    bottomPanelOpen: true,
+    currentBottomPanel: 'instrument',
+    keyboardVisible: false
   };
 
   var els = {};
 
   function init() {
-    els.btnRecord = document.getElementById('btn-record');
+    cacheElements();
+    bindEvents();
+    initModules();
+    buildVirtualKeyboard();
+    setStatus('Ready');
+    state.isInitialized = true;
+    startRenderLoop();
+  }
+
+  function cacheElements() {
     els.btnPlay = document.getElementById('btn-play');
     els.btnStop = document.getElementById('btn-stop');
-    els.btnAnalyze = document.getElementById('btn-analyze');
-    els.btnGenDrums = document.getElementById('btn-generate-drums');
-    els.drumStyle = document.getElementById('drum-style');
+    els.btnRecord = document.getElementById('btn-record');
+    els.btnRewind = document.getElementById('btn-rewind');
+    els.btnLoop = document.getElementById('btn-loop');
+    els.btnMetronome = document.getElementById('btn-metronome');
+    els.btnCountin = document.getElementById('btn-countin');
     els.bpm = document.getElementById('bpm');
-    els.timeDisplay = document.getElementById('time-display');
-    els.status = document.getElementById('status-message');
+    els.timeSig = document.getElementById('time-sig');
+    els.transportPosition = document.getElementById('transport-position');
+    els.transportTime = document.getElementById('transport-time');
+    els.statusMessage = document.getElementById('status-message');
 
-    els.canvasWaveform = document.getElementById('waveform-recording');
-    els.canvasChords = document.getElementById('chord-display');
-    els.canvasDrums = document.getElementById('drum-display');
+    els.btnAddAudioTrack = document.getElementById('btn-add-audio-track');
+    els.btnAddMidiTrack = document.getElementById('btn-add-midi-track');
+    els.btnAddBus = document.getElementById('btn-add-bus');
 
-    els.placeholderRec = document.getElementById('recording-placeholder');
-    els.placeholderChords = document.getElementById('chords-placeholder');
-    els.placeholderDrums = document.getElementById('drums-placeholder');
+    els.btnExport = document.getElementById('btn-export');
+    els.btnSave = document.getElementById('btn-save');
+    els.modalExport = document.getElementById('modal-export');
+    els.btnCloseExport = document.getElementById('btn-close-export');
+    els.btnDoExport = document.getElementById('btn-do-export');
 
-    els.volRecording = document.getElementById('vol-recording');
-    els.volDrums = document.getElementById('vol-drums');
+    els.btnToggleBottom = document.getElementById('btn-toggle-bottom');
+    els.bottomPanel = document.getElementById('bottom-panel');
 
-    els.btnRecord.addEventListener('click', toggleRecord);
-    els.btnPlay.addEventListener('click', startPlayback);
-    els.btnStop.addEventListener('click', stopPlayback);
-    els.btnAnalyze.addEventListener('click', analyzeChords);
-    els.btnGenDrums.addEventListener('click', generateDrums);
+    els.instrumentType = document.getElementById('instrument-type');
+    els.instrumentPreset = document.getElementById('instrument-preset');
+    els.addEffectType = document.getElementById('add-effect-type');
+    els.effectsSlots = document.getElementById('effects-slots');
 
-    els.volRecording.addEventListener('input', function () {
-      DAW.AudioEngine.setRecordingVolume(parseFloat(this.value));
+    els.btnAnalyzeChords = document.getElementById('btn-analyze-chords');
+    els.btnGenDrums = document.getElementById('btn-gen-drums');
+    els.chordDisplay = document.getElementById('chord-display');
+
+    els.btnToggleKeyboard = document.getElementById('btn-toggle-keyboard');
+    els.virtualKeyboard = document.getElementById('virtual-keyboard');
+    els.keyboardKeys = document.getElementById('keyboard-keys');
+    els.kbOctave = document.getElementById('kb-octave');
+    els.kbVelocity = document.getElementById('kb-velocity');
+
+    els.drumStyle = document.getElementById('drum-style');
+    els.hZoom = document.getElementById('h-zoom');
+    els.vZoom = document.getElementById('v-zoom');
+  }
+
+  function bindEvents() {
+    els.btnPlay.addEventListener('click', handlePlay);
+    els.btnStop.addEventListener('click', handleStop);
+    els.btnRecord.addEventListener('click', handleRecord);
+    els.btnRewind.addEventListener('click', handleRewind);
+    els.btnLoop.addEventListener('click', function () { toggleButton(this); toggleLoop(); });
+    els.btnMetronome.addEventListener('click', function () { toggleButton(this); toggleMetronome(); });
+    els.btnCountin.addEventListener('click', function () { toggleButton(this); toggleCountin(); });
+
+    els.bpm.addEventListener('change', function () {
+      var bpm = parseInt(this.value, 10) || 120;
+      if (DAW.Transport) DAW.Transport.setTempo(bpm);
+      setStatus('Tempo: ' + bpm + ' BPM');
     });
-    els.volDrums.addEventListener('input', function () {
-      DAW.AudioEngine.setDrumsVolume(parseFloat(this.value));
+
+    els.timeSig.addEventListener('change', function () {
+      var parts = this.value.split('/');
+      if (DAW.Transport) DAW.Transport.setTimeSignature(parseInt(parts[0], 10), parseInt(parts[1], 10));
     });
 
-    window.addEventListener('resize', redrawAll);
+    bindTabSwitching('#tab-bar .tab[data-view]', function (el) { switchView(el.getAttribute('data-view')); });
+    bindTabSwitching('.bottom-tab[data-panel]', function (el) { switchBottomPanel(el.getAttribute('data-panel')); });
 
-    setStatus('Ready - click REC to start recording');
-  }
+    els.btnToggleBottom.addEventListener('click', toggleBottomPanel);
 
-  function setStatus(msg) {
-    els.status.textContent = msg;
-  }
+    if (els.btnAddAudioTrack) els.btnAddAudioTrack.addEventListener('click', function () { addTrack('audio'); });
+    if (els.btnAddMidiTrack) els.btnAddMidiTrack.addEventListener('click', function () { addTrack('midi'); });
+    if (els.btnAddBus) els.btnAddBus.addEventListener('click', function () { addTrack('bus'); });
 
-  function formatTime(seconds) {
-    var m = Math.floor(seconds / 60);
-    var s = Math.floor(seconds % 60);
-    return m + ':' + (s < 10 ? '0' : '') + s;
-  }
+    els.btnExport.addEventListener('click', function () { els.modalExport.classList.remove('hidden'); });
+    els.btnCloseExport.addEventListener('click', function () { els.modalExport.classList.add('hidden'); });
+    els.btnDoExport.addEventListener('click', handleExport);
+    els.btnSave.addEventListener('click', handleSave);
 
-  function toggleRecord() {
-    if (DAW.AudioEngine.isRecording()) {
-      DAW.AudioEngine.stopRecording();
-      els.btnRecord.classList.remove('recording');
-      els.btnRecord.textContent = '● REC';
-      setStatus('Processing recording...');
-    } else {
-      state.hasRecording = false;
-      state.chords = null;
-      state.drumData = null;
-      els.btnPlay.disabled = true;
-      els.btnAnalyze.disabled = true;
-      els.btnGenDrums.disabled = true;
-      els.placeholderRec.style.display = '';
-      els.placeholderChords.style.display = '';
-      els.placeholderDrums.style.display = '';
+    els.btnToggleKeyboard.addEventListener('click', toggleVirtualKeyboard);
 
-      DAW.AudioEngine.startRecording(onRecordingReady).then(function () {
-        els.btnRecord.classList.add('recording');
-        els.btnRecord.textContent = '■ STOP REC';
-        setStatus('Recording... click again to stop');
-      }).catch(function (err) {
-        setStatus('Microphone access denied: ' + err.message);
+    if (els.addEffectType) {
+      els.addEffectType.addEventListener('change', function () {
+        if (this.value) { addEffect(this.value); this.value = ''; }
       });
+    }
+
+    if (els.instrumentPreset) {
+      els.instrumentPreset.addEventListener('change', function () {
+        if (DAW.Synth && DAW.Synth.setPreset) {
+          DAW.Synth.setPreset(this.value);
+          setStatus('Preset: ' + this.value);
+        }
+      });
+    }
+
+    if (els.btnAnalyzeChords) els.btnAnalyzeChords.addEventListener('click', analyzeChords);
+    if (els.btnGenDrums) els.btnGenDrums.addEventListener('click', generateDrums);
+
+    var btnQuantize = document.getElementById('btn-quantize');
+    var btnHumanize = document.getElementById('btn-humanize');
+    if (btnQuantize) btnQuantize.addEventListener('click', function () { setStatus('Quantized'); });
+    if (btnHumanize) btnHumanize.addEventListener('click', function () { setStatus('Humanized'); });
+
+    var btnDrumClear = document.getElementById('btn-drum-clear');
+    var btnDrumLoad = document.getElementById('btn-drum-load-pattern');
+    if (btnDrumClear) btnDrumClear.addEventListener('click', function () {
+      if (DAW.StepSequencer && DAW.StepSequencer.clear) DAW.StepSequencer.clear();
+      setStatus('Pattern cleared');
+    });
+    if (btnDrumLoad) btnDrumLoad.addEventListener('click', function () {
+      var style = els.drumStyle ? els.drumStyle.value : 'rock';
+      setStatus('Loaded ' + style + ' pattern');
+    });
+
+    bindEditButtons();
+    bindPianoRollTools();
+    bindSynthControls();
+
+    if (els.hZoom) els.hZoom.addEventListener('input', function () {
+      if (DAW.Timeline && DAW.Timeline.setZoom) DAW.Timeline.setZoom(parseFloat(this.value));
+    });
+    if (els.vZoom) els.vZoom.addEventListener('input', function () {
+      if (DAW.Timeline && DAW.Timeline.setVZoom) DAW.Timeline.setVZoom(parseFloat(this.value));
+    });
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('resize', handleResize);
+  }
+
+  function bindTabSwitching(selector, handler) {
+    var items = document.querySelectorAll(selector);
+    for (var i = 0; i < items.length; i++) {
+      items[i].addEventListener('click', (function (el) { return function () { handler(el); }; })(items[i]));
     }
   }
 
-  function onRecordingReady(buffer) {
-    state.hasRecording = true;
-    state.totalDuration = buffer.duration;
-    els.placeholderRec.style.display = 'none';
-    els.btnPlay.disabled = false;
-    els.btnAnalyze.disabled = false;
+  function bindEditButtons() {
+    var ops = ['cut', 'copy', 'paste', 'delete', 'normalize', 'reverse',
+      'fadein', 'fadeout', 'silence', 'timestretch', 'pitchshift', 'denoise', 'phase'];
+    ops.forEach(function (op) {
+      var el = document.getElementById('btn-edit-' + op);
+      if (el) el.addEventListener('click', function () { setStatus('Edit: ' + op); });
+    });
+  }
 
-    DAW.WaveformRenderer.drawWaveform(els.canvasWaveform, buffer, '#4ecca3');
+  function bindPianoRollTools() {
+    var tools = document.querySelectorAll('#view-pianoroll .view-toolbar [data-tool]');
+    for (var i = 0; i < tools.length; i++) {
+      tools[i].addEventListener('click', (function (allTools) {
+        return function () {
+          for (var x = 0; x < allTools.length; x++) allTools[x].classList.remove('active');
+          this.classList.add('active');
+          if (DAW.PianoRoll && DAW.PianoRoll.setTool) DAW.PianoRoll.setTool(this.getAttribute('data-tool'));
+        };
+      })(tools));
+    }
+  }
 
-    var estimatedBPM = DAW.ChordDetector.estimateTempo(buffer);
-    els.bpm.value = estimatedBPM;
+  function bindSynthControls() {
+    var params = [
+      ['osc1-type', 'osc1Type'], ['osc1-oct', 'osc1Octave'], ['osc1-detune', 'osc1Detune'],
+      ['osc1-level', 'osc1Level'], ['osc2-type', 'osc2Type'], ['osc2-oct', 'osc2Octave'],
+      ['osc2-detune', 'osc2Detune'], ['osc2-level', 'osc2Level'],
+      ['filter-type', 'filterType'], ['filter-cutoff', 'filterCutoff'],
+      ['filter-q', 'filterQ'], ['filter-env', 'filterEnvAmount'],
+      ['amp-a', 'ampAttack'], ['amp-d', 'ampDecay'], ['amp-s', 'ampSustain'], ['amp-r', 'ampRelease'],
+      ['flt-a', 'filterAttack'], ['flt-d', 'filterDecay'], ['flt-s', 'filterSustain'], ['flt-r', 'filterRelease'],
+      ['lfo-rate', 'lfoRate'], ['lfo-depth', 'lfoDepth'], ['lfo-dest', 'lfoDest'], ['lfo-wave', 'lfoWave'],
+      ['glide', 'glide'], ['unison', 'unison'], ['unison-spread', 'unisonSpread'], ['sub-level', 'subLevel']
+    ];
+    params.forEach(function (p) {
+      var el = document.getElementById(p[0]);
+      if (!el) return;
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', function () {
+        var val = el.tagName === 'SELECT' ? el.value : parseFloat(el.value);
+        if (DAW.Synth && DAW.Synth.setParam) DAW.Synth.setParam(p[1], val);
+      });
+    });
+  }
 
-    setStatus('Recording ready (' + formatTime(buffer.duration) + ') - estimated BPM: ' + estimatedBPM);
+  function initModules() {
+    var ac = DAW.AudioEngine.getContext();
+
+    if (DAW.Transport && DAW.Transport.init) {
+      DAW.Transport.init(ac);
+      DAW.Transport.onPositionChange = updateTransportDisplay;
+      DAW.Transport.onPlay = function () { els.btnPlay.classList.add('active'); setStatus('Playing'); };
+      DAW.Transport.onStop = function () {
+        els.btnPlay.classList.remove('active');
+        els.btnRecord.classList.remove('recording');
+        setStatus('Stopped');
+      };
+    }
+
+    if (DAW.TrackManager && DAW.TrackManager.init) {
+      DAW.TrackManager.init();
+      addTrack('audio', 'Audio 1');
+      addTrack('midi', 'MIDI 1');
+    }
+
+    if (DAW.MIDIEngine && DAW.MIDIEngine.init) {
+      DAW.MIDIEngine.init();
+      DAW.MIDIEngine.onNoteOn = function (note, velocity) {
+        DAW.AudioEngine.ensureResumed();
+        if (DAW.Synth && DAW.Synth.noteOn) DAW.Synth.noteOn(note, velocity, 0);
+        highlightKey(note, true);
+      };
+      DAW.MIDIEngine.onNoteOff = function (note) {
+        if (DAW.Synth && DAW.Synth.noteOff) DAW.Synth.noteOff(note, 0);
+        highlightKey(note, false);
+      };
+    }
+
+    if (DAW.Synth && DAW.Synth.create) {
+      DAW.AudioEngine.ensureResumed();
+      DAW.AudioEngine.initGains();
+      var output = DAW.AudioEngine.getMasterGain ? DAW.AudioEngine.getMasterGain() : ac.destination;
+      DAW.Synth.create(ac, output);
+    }
+
+    initView('Timeline', 'arrange-container');
+    initView('PianoRoll', 'pianoroll-container');
+    initView('MixerView', 'mix-container');
+    initView('SessionView', 'session-container');
+    initView('StepSequencer', 'drumpad-container');
+  }
+
+  function initView(moduleName, containerId) {
+    if (DAW[moduleName] && DAW[moduleName].init) {
+      var container = document.getElementById(containerId);
+      if (container) DAW[moduleName].init(container);
+    }
+  }
+
+  function switchView(viewName) {
+    state.currentView = viewName;
+    var views = document.querySelectorAll('.view');
+    var tabs = document.querySelectorAll('#tab-bar .tab[data-view]');
+    for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
+    for (var j = 0; j < tabs.length; j++) {
+      tabs[j].classList.remove('active');
+      if (tabs[j].getAttribute('data-view') === viewName) tabs[j].classList.add('active');
+    }
+    var target = document.getElementById('view-' + viewName);
+    if (target) target.classList.add('active');
+    handleResize();
+  }
+
+  function switchBottomPanel(panelName) {
+    state.currentBottomPanel = panelName;
+    var views = document.querySelectorAll('.bottom-view');
+    var tabs = document.querySelectorAll('.bottom-tab[data-panel]');
+    for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
+    for (var j = 0; j < tabs.length; j++) {
+      tabs[j].classList.remove('active');
+      if (tabs[j].getAttribute('data-panel') === panelName) tabs[j].classList.add('active');
+    }
+    var target = document.getElementById('panel-' + panelName);
+    if (target) target.classList.add('active');
+    if (!state.bottomPanelOpen) toggleBottomPanel();
+  }
+
+  function toggleBottomPanel() {
+    state.bottomPanelOpen = !state.bottomPanelOpen;
+    els.bottomPanel.classList.toggle('collapsed');
+    els.btnToggleBottom.textContent = state.bottomPanelOpen ? '▼' : '▲';
+    handleResize();
+  }
+
+  function handlePlay() {
+    DAW.AudioEngine.ensureResumed().then(function () {
+      if (DAW.Transport) DAW.Transport.play();
+      els.btnPlay.classList.add('active');
+      setStatus('Playing');
+    });
+  }
+
+  function handleStop() {
+    if (DAW.Transport) DAW.Transport.stop();
+    els.btnPlay.classList.remove('active');
+    els.btnRecord.classList.remove('recording');
+    updateTransportDisplay({ bar: 1, beat: 1, tick: 0, seconds: 0 });
+    setStatus('Stopped');
+  }
+
+  function handleRecord() {
+    DAW.AudioEngine.ensureResumed().then(function () {
+      var isRec = els.btnRecord.classList.toggle('recording');
+      if (isRec) {
+        if (DAW.Transport) DAW.Transport.record();
+        var armedTracks = [];
+        if (DAW.TrackManager) {
+          DAW.TrackManager.getTracks().forEach(function (t) { if (t.armed) armedTracks.push(t.id); });
+          if (armedTracks.length === 0) {
+            var audio = DAW.TrackManager.getTracksByType('audio');
+            if (audio.length > 0) { audio[0].armed = true; armedTracks.push(audio[0].id); }
+          }
+        }
+        if (DAW.Recorder && armedTracks.length > 0) DAW.Recorder.startRecording(armedTracks);
+        setStatus('Recording...');
+      } else {
+        if (DAW.Recorder) DAW.Recorder.stopRecording();
+        if (DAW.Transport) DAW.Transport.stop();
+        setStatus('Recording stopped');
+      }
+    });
+  }
+
+  function handleRewind() {
+    if (DAW.Transport) { DAW.Transport.stop(); DAW.Transport.setPosition(0); }
+    updateTransportDisplay({ bar: 1, beat: 1, tick: 0, seconds: 0 });
+  }
+
+  function toggleLoop() {
+    if (DAW.Transport && DAW.Transport.setLoop) {
+      var on = DAW.Transport.loop ? !DAW.Transport.loop.enabled : true;
+      DAW.Transport.setLoop(0, 8, on);
+    }
+  }
+
+  function toggleMetronome() {
+    if (DAW.Transport && DAW.Transport.metronome) {
+      DAW.Transport.metronome.enabled = !DAW.Transport.metronome.enabled;
+    }
+  }
+
+  function toggleCountin() {
+    if (DAW.Transport) {
+      DAW.Transport.countIn = DAW.Transport.countIn ? 0 : 1;
+    }
+  }
+
+  function toggleButton(btn) { btn.classList.toggle('active'); }
+
+  function addTrack(type, name) {
+    if (!DAW.TrackManager) return null;
+    var track = DAW.TrackManager.createTrack(type, name);
+    if (track) { setStatus('Added ' + type + ' track: ' + track.name); refreshViews(); }
+    return track;
+  }
+
+  function addEffect(effectType) {
+    var slot = document.createElement('div');
+    slot.className = 'effect-slot';
+    slot.innerHTML = '<span class="effect-bypass">●</span>' +
+      '<span class="effect-name">' + effectType.toUpperCase() + '</span>' +
+      '<span class="effect-remove">×</span>';
+    slot.querySelector('.effect-remove').addEventListener('click', function () {
+      slot.remove();
+      if (els.effectsSlots.children.length === 0) {
+        els.effectsSlots.innerHTML = '<div class="effect-placeholder">No effects loaded</div>';
+      }
+    });
+    var ph = els.effectsSlots.querySelector('.effect-placeholder');
+    if (ph) ph.remove();
+    els.effectsSlots.appendChild(slot);
+    setStatus('Added effect: ' + effectType);
   }
 
   function analyzeChords() {
     var buffer = DAW.AudioEngine.getRecordedBuffer();
-    if (!buffer) return;
-
+    if (!buffer) { setStatus('No recording to analyze'); return; }
     setStatus('Analyzing chords...');
-    els.btnAnalyze.disabled = true;
-
     setTimeout(function () {
-      state.chords = DAW.ChordDetector.analyze(buffer, 0.5);
-      els.placeholderChords.style.display = 'none';
-      DAW.WaveformRenderer.drawChords(els.canvasChords, state.chords, state.totalDuration);
-
-      els.btnGenDrums.disabled = false;
-      els.btnAnalyze.disabled = false;
-
-      var chordNames = state.chords
-        .filter(function (c) { return c.chord !== 'N'; })
-        .map(function (c) { return c.chord; });
-      var unique = chordNames.filter(function (v, i, a) { return a.indexOf(v) === i; });
-
-      setStatus('Detected chords: ' + unique.join(', '));
+      if (!DAW.ChordDetector) return;
+      var chords = DAW.ChordDetector.analyze(buffer, 0.5);
+      var unique = [];
+      chords.forEach(function (c) {
+        if (c.chord !== 'N' && unique.indexOf(c.chord) === -1) unique.push(c.chord);
+      });
+      if (DAW.WaveformRenderer && els.chordDisplay) {
+        DAW.WaveformRenderer.drawChords(els.chordDisplay, chords, buffer.duration);
+      }
+      setStatus('Chords: ' + unique.join(', '));
     }, 50);
   }
 
   function generateDrums() {
     var buffer = DAW.AudioEngine.getRecordedBuffer();
-    if (!buffer) return;
-
-    var style = els.drumStyle.value;
+    if (!buffer) { setStatus('No recording'); return; }
+    var style = els.drumStyle ? els.drumStyle.value : 'rock';
     var bpm = parseInt(els.bpm.value, 10) || 120;
-
-    setStatus('Generating ' + style + ' drums at ' + bpm + ' BPM...');
-
-    state.drumData = DAW.DrumMachine.generatePattern(
-      style, state.chords, bpm, state.totalDuration
-    );
-
-    els.placeholderDrums.style.display = 'none';
-    DAW.WaveformRenderer.drawDrumPattern(els.canvasDrums, state.drumData);
-
-    setStatus(style.charAt(0).toUpperCase() + style.slice(1) + ' drum pattern generated - press PLAY');
+    if (DAW.DrumMachine && DAW.DrumMachine.generatePattern) {
+      DAW.DrumMachine.generatePattern(style, null, bpm, buffer.duration);
+    }
+    setStatus(style + ' drums generated');
   }
 
-  function startPlayback() {
-    if (state.isPlaying) return;
-    state.isPlaying = true;
+  function handleExport() {
+    var fmt = document.getElementById('export-format');
+    var formatVal = fmt ? fmt.value : 'wav16';
+    setStatus('Exporting ' + formatVal + '...');
+    var buffer = DAW.AudioEngine.getRecordedBuffer();
+    if (buffer && DAW.ExportEngine && DAW.ExportEngine.exportWAV) {
+      var bits = formatVal === 'wav24' ? 24 : 16;
+      var blob = DAW.ExportEngine.exportWAV(buffer, bits);
+      if (blob && DAW.ExportEngine.download) DAW.ExportEngine.download(blob, 'export.wav');
+      setStatus('Export complete');
+    }
+    els.modalExport.classList.add('hidden');
+  }
 
-    DAW.AudioEngine.ensureResumed().then(function () {
-      var ac = DAW.AudioEngine.getContext();
-      state.playStartTime = ac.currentTime;
+  function handleSave() {
+    if (DAW.ExportEngine && DAW.ExportEngine.exportProject) {
+      var json = DAW.ExportEngine.exportProject();
+      var blob = new Blob([json], { type: 'application/json' });
+      if (DAW.ExportEngine.download) DAW.ExportEngine.download(blob, 'project.dawproject');
+      setStatus('Project saved');
+    } else {
+      setStatus('Project save ready');
+    }
+  }
 
-      DAW.AudioEngine.playRecording(0);
+  function updateTransportDisplay(pos) {
+    if (!pos) return;
+    var bar = pos.bar || 1, beat = pos.beat || 1, tick = pos.tick || 0, sec = pos.seconds || 0;
+    els.transportPosition.textContent =
+      ('00' + bar).slice(-3) + ' : ' + beat + ' : ' + ('00' + tick).slice(-3);
+    var m = Math.floor(sec / 60), s = sec % 60;
+    els.transportTime.textContent = m + ':' + (s < 10 ? '0' : '') + s.toFixed(3);
+  }
 
-      if (state.drumData) {
-        DAW.DrumMachine.play(state.drumData, 0);
+  // Computer keyboard as MIDI input
+  var KEY_MAP = { a:0, w:1, s:2, e:3, d:4, f:5, t:6, g:7, y:8, h:9, u:10, j:11, k:12 };
+
+  function handleKeyDown(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        if (DAW.Transport && DAW.Transport.isPlaying && DAW.Transport.isPlaying()) handleStop();
+        else handlePlay();
+        return;
+      case 'Home': handleRewind(); return;
+      case '1': switchView('arrange'); return;
+      case '2': switchView('mix'); return;
+      case '3': switchView('pianoroll'); return;
+      case '4': switchView('session'); return;
+      case '5': switchView('drumpad'); return;
+      case '6': switchView('edit'); return;
+    }
+
+    if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) { handleRecord(); return; }
+
+    var k = e.key.toLowerCase();
+    if (KEY_MAP[k] !== undefined && !e.repeat) {
+      var oct = els.kbOctave ? parseInt(els.kbOctave.value, 10) : 4;
+      var vel = els.kbVelocity ? parseInt(els.kbVelocity.value, 10) : 100;
+      var note = KEY_MAP[k] + (oct * 12);
+      if (note >= 0 && note <= 127) {
+        DAW.AudioEngine.ensureResumed();
+        if (DAW.Synth && DAW.Synth.noteOn) DAW.Synth.noteOn(note, vel, 0);
+        highlightKey(note, true);
       }
-
-      els.btnPlay.disabled = true;
-      els.btnStop.disabled = false;
-      els.btnRecord.disabled = true;
-
-      setStatus('Playing...');
-      updatePlayhead();
-    });
+    }
   }
 
-  function stopPlayback() {
-    state.isPlaying = false;
-    DAW.AudioEngine.stopPlayback();
-    DAW.DrumMachine.stop();
-
-    els.btnPlay.disabled = false;
-    els.btnStop.disabled = true;
-    els.btnRecord.disabled = false;
-
-    if (state.animFrameId) {
-      cancelAnimationFrame(state.animFrameId);
-      state.animFrameId = null;
+  function handleKeyUp(e) {
+    var k = e.key.toLowerCase();
+    if (KEY_MAP[k] !== undefined) {
+      var oct = els.kbOctave ? parseInt(els.kbOctave.value, 10) : 4;
+      var note = KEY_MAP[k] + (oct * 12);
+      if (note >= 0 && note <= 127) {
+        if (DAW.Synth && DAW.Synth.noteOff) DAW.Synth.noteOff(note, 0);
+        highlightKey(note, false);
+      }
     }
-
-    redrawAll();
-    els.timeDisplay.textContent = '0:00';
-    setStatus('Stopped');
   }
 
-  function updatePlayhead() {
-    if (!state.isPlaying) return;
+  function buildVirtualKeyboard() {
+    if (!els.keyboardKeys) return;
+    els.keyboardKeys.innerHTML = '';
+    var oct = els.kbOctave ? parseInt(els.kbOctave.value, 10) : 4;
+    var blacks = [1, 3, 6, 8, 10];
+    var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
-    var ac = DAW.AudioEngine.getContext();
-    var elapsed = ac.currentTime - state.playStartTime;
-
-    if (elapsed >= state.totalDuration) {
-      stopPlayback();
-      return;
+    for (var o = oct; o <= oct + 1; o++) {
+      for (var n = 0; n < 12; n++) {
+        var midi = o * 12 + n;
+        if (midi > 127) break;
+        var isBlack = blacks.indexOf(n) !== -1;
+        var keyEl = document.createElement('div');
+        keyEl.className = isBlack ? 'key-black' : 'key-white';
+        keyEl.setAttribute('data-note', midi);
+        keyEl.title = names[n] + o;
+        (function (note) {
+          keyEl.addEventListener('mousedown', function () {
+            DAW.AudioEngine.ensureResumed();
+            var v = els.kbVelocity ? parseInt(els.kbVelocity.value, 10) : 100;
+            if (DAW.Synth && DAW.Synth.noteOn) DAW.Synth.noteOn(note, v, 0);
+            highlightKey(note, true);
+          });
+          keyEl.addEventListener('mouseup', function () {
+            if (DAW.Synth && DAW.Synth.noteOff) DAW.Synth.noteOff(note, 0);
+            highlightKey(note, false);
+          });
+          keyEl.addEventListener('mouseleave', function () {
+            if (DAW.Synth && DAW.Synth.noteOff) DAW.Synth.noteOff(note, 0);
+            highlightKey(note, false);
+          });
+        })(midi);
+        els.keyboardKeys.appendChild(keyEl);
+      }
     }
-
-    var ratio = elapsed / state.totalDuration;
-    els.timeDisplay.textContent = formatTime(elapsed);
-
-    var buffer = DAW.AudioEngine.getRecordedBuffer();
-    DAW.WaveformRenderer.drawWaveform(els.canvasWaveform, buffer, '#4ecca3', ratio);
-
-    if (state.chords) {
-      DAW.WaveformRenderer.drawChords(els.canvasChords, state.chords, state.totalDuration, ratio);
-    }
-    if (state.drumData) {
-      DAW.WaveformRenderer.drawDrumPattern(els.canvasDrums, state.drumData, ratio);
-    }
-
-    state.animFrameId = requestAnimationFrame(updatePlayhead);
+    if (els.kbOctave) els.kbOctave.removeEventListener('change', buildVirtualKeyboard);
+    if (els.kbOctave) els.kbOctave.addEventListener('change', buildVirtualKeyboard);
   }
 
-  function redrawAll() {
-    var buffer = DAW.AudioEngine.getRecordedBuffer();
-    if (buffer) {
-      DAW.WaveformRenderer.drawWaveform(els.canvasWaveform, buffer, '#4ecca3');
-    }
-    if (state.chords) {
-      DAW.WaveformRenderer.drawChords(els.canvasChords, state.chords, state.totalDuration);
-    }
-    if (state.drumData) {
-      DAW.WaveformRenderer.drawDrumPattern(els.canvasDrums, state.drumData);
-    }
+  function highlightKey(note, on) {
+    var k = document.querySelector('#keyboard-keys [data-note="' + note + '"]');
+    if (k) { if (on) k.classList.add('active'); else k.classList.remove('active'); }
+  }
+
+  function toggleVirtualKeyboard() {
+    state.keyboardVisible = !state.keyboardVisible;
+    els.virtualKeyboard.classList.toggle('collapsed');
+  }
+
+  function refreshViews() {
+    if (DAW.Timeline && DAW.Timeline.render) DAW.Timeline.render();
+    if (DAW.MixerView && DAW.MixerView.render) DAW.MixerView.render();
+    if (DAW.SessionView && DAW.SessionView.render) DAW.SessionView.render();
+  }
+
+  function startRenderLoop() {
+    (function loop() {
+      if (DAW.Transport && DAW.Transport.isPlaying && DAW.Transport.isPlaying()) {
+        var pos = DAW.Transport.getPosition ? DAW.Transport.getPosition() : null;
+        if (pos) updateTransportDisplay(pos);
+      }
+      state.animFrameId = requestAnimationFrame(loop);
+    })();
+  }
+
+  function handleResize() {
+    refreshViews();
+    if (DAW.PianoRoll && DAW.PianoRoll.render) DAW.PianoRoll.render();
+    if (DAW.StepSequencer && DAW.StepSequencer.render) DAW.StepSequencer.render();
+  }
+
+  function setStatus(msg) {
+    if (els.statusMessage) els.statusMessage.textContent = msg;
   }
 
   return { init: init };
