@@ -82,7 +82,7 @@ DAW.App = (function () {
 
     els.bpm.addEventListener('change', function () {
       var bpm = parseInt(this.value, 10) || 120;
-      if (DAW.Transport) DAW.Transport.setTempo(bpm);
+      if (DAW.Transport) DAW.Transport.setBPM(bpm);
       setStatus('Tempo: ' + bpm + ' BPM');
     });
 
@@ -211,19 +211,17 @@ DAW.App = (function () {
   function initModules() {
     var ac = DAW.AudioEngine.getContext();
 
-    if (DAW.Transport && DAW.Transport.init) {
-      DAW.Transport.init(ac);
-      DAW.Transport.onPositionChange = updateTransportDisplay;
-      DAW.Transport.onPlay = function () { els.btnPlay.classList.add('active'); setStatus('Playing'); };
-      DAW.Transport.onStop = function () {
+    if (DAW.Transport) {
+      DAW.Transport.on('onPositionChange', updateTransportDisplay);
+      DAW.Transport.on('onPlay', function () { els.btnPlay.classList.add('active'); setStatus('Playing'); });
+      DAW.Transport.on('onStop', function () {
         els.btnPlay.classList.remove('active');
         els.btnRecord.classList.remove('recording');
         setStatus('Stopped');
-      };
+      });
     }
 
-    if (DAW.TrackManager && DAW.TrackManager.init) {
-      DAW.TrackManager.init();
+    if (DAW.TrackManager) {
       addTrack('audio', 'Audio 1');
       addTrack('midi', 'MIDI 1');
     }
@@ -309,7 +307,7 @@ DAW.App = (function () {
     if (DAW.Transport) DAW.Transport.stop();
     els.btnPlay.classList.remove('active');
     els.btnRecord.classList.remove('recording');
-    updateTransportDisplay({ bar: 1, beat: 1, tick: 0, seconds: 0 });
+    updateTransportDisplay({ bars: 0, beats: 0, ticks: 0 });
     setStatus('Stopped');
   }
 
@@ -337,26 +335,26 @@ DAW.App = (function () {
   }
 
   function handleRewind() {
-    if (DAW.Transport) { DAW.Transport.stop(); DAW.Transport.setPosition(0); }
-    updateTransportDisplay({ bar: 1, beat: 1, tick: 0, seconds: 0 });
+    if (DAW.Transport) { DAW.Transport.stop(); DAW.Transport.setPosition(0, 0, 0); }
+    updateTransportDisplay({ bars: 0, beats: 0, ticks: 0 });
   }
 
   function toggleLoop() {
-    if (DAW.Transport && DAW.Transport.setLoop) {
-      var on = DAW.Transport.loop ? !DAW.Transport.loop.enabled : true;
-      DAW.Transport.setLoop(0, 8, on);
+    if (DAW.Transport && DAW.Transport.setLoopRegion) {
+      var region = DAW.Transport.getLoopRegion();
+      DAW.Transport.setLoopRegion(region.start, region.end, !region.enabled);
     }
   }
 
   function toggleMetronome() {
-    if (DAW.Transport && DAW.Transport.metronome) {
-      DAW.Transport.metronome.enabled = !DAW.Transport.metronome.enabled;
+    if (DAW.Transport) {
+      DAW.Transport.setMetronome(!DAW.Transport.getMetronomeEnabled());
     }
   }
 
   function toggleCountin() {
     if (DAW.Transport) {
-      DAW.Transport.countIn = DAW.Transport.countIn ? 0 : 1;
+      DAW.Transport.setCountIn(DAW.Transport.getCountIn() ? 0 : 1);
     }
   }
 
@@ -443,9 +441,12 @@ DAW.App = (function () {
 
   function updateTransportDisplay(pos) {
     if (!pos) return;
-    var bar = pos.bar || 1, beat = pos.beat || 1, tick = pos.tick || 0, sec = pos.seconds || 0;
+    var bar = (pos.bars != null ? pos.bars : (pos.bar || 1) - 1) + 1;
+    var beat = (pos.beats != null ? pos.beats : (pos.beat || 1) - 1) + 1;
+    var tick = pos.ticks != null ? pos.ticks : (pos.tick || 0);
     els.transportPosition.textContent =
       ('00' + bar).slice(-3) + ' : ' + beat + ' : ' + ('00' + tick).slice(-3);
+    var sec = pos.seconds || (DAW.Transport ? DAW.Transport.getPositionInSeconds() : 0);
     var m = Math.floor(sec / 60), s = sec % 60;
     els.transportTime.textContent = m + ':' + (s < 10 ? '0' : '') + s.toFixed(3);
   }

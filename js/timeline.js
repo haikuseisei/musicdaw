@@ -881,6 +881,14 @@ DAW.Timeline = (function () {
     render();
   }
 
+  function setVZoom(level) {
+    var clamped = Math.max(0.25, Math.min(level, 4));
+    for (var i = 0; i < tracks.length; i++) {
+      tracks[i].height = Math.max(MIN_TRACK_HEIGHT, Math.round(DEFAULT_TRACK_HEIGHT * clamped));
+    }
+    render();
+  }
+
   function setScroll(x, y) {
     scrollX = Math.max(0, x);
     scrollY = Math.max(0, y);
@@ -917,6 +925,7 @@ DAW.Timeline = (function () {
     setTracks: setTracks,
     setPlayheadPosition: setPlayheadPosition,
     setZoom: setZoom,
+    setVZoom: setVZoom,
     setScroll: setScroll,
     setLoopRegion: setLoopRegion,
     setBPM: setBPM,
