@@ -5,6 +5,7 @@ DAW.App = (function () {
     currentView: 'arrange',
     selectedTrackId: null,
     selectedClipId: null,
+    activeClip: null,
     isInitialized: false,
     animFrameId: null,
     bottomPanelOpen: true,
@@ -211,6 +212,13 @@ DAW.App = (function () {
   function initModules() {
     var ac = DAW.AudioEngine.getContext();
 
+    // Initialize views FIRST so render() calls from addTrack are safe
+    initView('Timeline', 'arrange-container');
+    initView('PianoRoll', 'pianoroll-container');
+    initView('MixerView', 'mix-container');
+    initView('SessionView', 'session-container');
+    initView('StepSequencer', 'drumpad-container');
+
     if (DAW.Transport) {
       DAW.Transport.on('onPositionChange', updateTransportDisplay);
       DAW.Transport.on('onPlay', function () { els.btnPlay.classList.add('active'); setStatus('Playing'); });
@@ -221,9 +229,10 @@ DAW.App = (function () {
       });
     }
 
-    if (DAW.TrackManager) {
-      addTrack('audio', 'Audio 1');
-      addTrack('midi', 'MIDI 1');
+    if (DAW.Synth && DAW.Synth.create) {
+      DAW.AudioEngine.initGains();
+      var output = DAW.AudioEngine.getMasterGain ? DAW.AudioEngine.getMasterGain() : ac.destination;
+      DAW.Synth.create(ac, output);
     }
 
     if (DAW.MIDIEngine && DAW.MIDIEngine.init) {
@@ -239,18 +248,167 @@ DAW.App = (function () {
       };
     }
 
-    if (DAW.Synth && DAW.Synth.create) {
-      DAW.AudioEngine.ensureResumed();
-      DAW.AudioEngine.initGains();
-      var output = DAW.AudioEngine.getMasterGain ? DAW.AudioEngine.getMasterGain() : ac.destination;
-      DAW.Synth.create(ac, output);
+    if (DAW.Timeline) {
+      DAW.Timeline.onClipDoubleClick = function (clip) {
+        if (clip && clip.type === 'midi') {
+          state.activeClip = clip;
+          if (DAW.PianoRoll && DAW.PianoRoll.setClip) {
+            DAW.PianoRoll.setClip(clip);
+            switchView('pianoroll');
+            setStatus('Editing: ' + clip.name);
+          }
+        }
+      };
     }
 
-    initView('Timeline', 'arrange-container');
-    initView('PianoRoll', 'pianoroll-container');
-    initView('MixerView', 'mix-container');
-    initView('SessionView', 'session-container');
-    initView('StepSequencer', 'drumpad-container');
+    bindMIDIFileDrop();
+
+    if (DAW.TrackManager) {
+      addTrack('audio', 'Audio 1');
+      addTrack('midi', 'MIDI 1');
+    }
+  }
+
+  function bindMIDIFileDrop() {
+    var arrangeContainer = document.getElementById('arrange-container');
+    if (!arrangeContainer) return;
+
+    arrangeContainer.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    arrangeContainer.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var files = e.dataTransfer.files;
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        if (file.name.match(/\.mid$/i) || file.name.match(/\.midi$/i)) {
+          loadMIDIFile(file);
+        }
+      }
+    });
+  }
+
+  function loadMIDIFile(file) {
+    setStatus('Loading MIDI: ' + file.name);
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var bytes = new Uint8Array(e.target.result);
+        var parsed = parseMIDI(bytes);
+        if (!parsed) { setStatus('Invalid MIDI file'); return; }
+
+        var track = addTrack('midi', file.name.replace(/\.midi?$/i, ''));
+        if (!track) return;
+
+        var clip = track.clips[0];
+        if (!clip && DAW.Clip) {
+          clip = DAW.Clip.createMIDIClip(track.id, 0, parsed.duration);
+          track.clips.push(clip);
+        }
+        if (clip) {
+          clip.notes = parsed.notes;
+          clip.duration = parsed.duration;
+          state.activeClip = clip;
+          if (DAW.PianoRoll && DAW.PianoRoll.setClip) {
+            DAW.PianoRoll.setClip(clip);
+            switchView('pianoroll');
+          }
+        }
+        refreshViews();
+        setStatus('Loaded MIDI: ' + file.name + ' (' + parsed.notes.length + ' notes)');
+      } catch (err) {
+        setStatus('MIDI load error: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function parseMIDI(bytes) {
+    var pos = 0;
+
+    function read(n) {
+      var r = bytes.slice(pos, pos + n);
+      pos += n;
+      return r;
+    }
+    function readUint32() {
+      var b = read(4);
+      return (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3];
+    }
+    function readUint16() {
+      var b = read(2);
+      return (b[0] << 8) | b[1];
+    }
+    function readVarLen() {
+      var v = 0, b;
+      do { b = bytes[pos++]; v = (v << 7) | (b & 0x7F); } while (b & 0x80);
+      return v;
+    }
+
+    // Header
+    if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'MThd') return null;
+    pos = 4;
+    readUint32(); // header length (always 6)
+    var format = readUint16();
+    var numTracks = readUint16();
+    var division = readUint16();
+    if (division & 0x8000) return null; // SMPTE not supported
+    var ppq = division;
+
+    var notes = [];
+    var tempoUs = 500000;
+    var maxTick = 0;
+
+    for (var t = 0; t < numTracks; t++) {
+      if (String.fromCharCode(bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3]) !== 'MTrk') break;
+      pos += 4;
+      var trackLen = readUint32();
+      var trackEnd = pos + trackLen;
+      var tick = 0;
+      var lastStatus = 0;
+      var activeNotes = {};
+
+      while (pos < trackEnd) {
+        tick += readVarLen();
+        var statusByte = bytes[pos];
+        if (statusByte & 0x80) { lastStatus = statusByte; pos++; }
+        else { statusByte = lastStatus; }
+
+        var type = statusByte & 0xF0;
+        var ch = statusByte & 0x0F;
+
+        if (type === 0xFF) { // Meta
+          var metaType = bytes[pos++];
+          var metaLen = readVarLen();
+          if (metaType === 0x51 && metaLen === 3) { // Tempo
+            tempoUs = (bytes[pos] << 16) | (bytes[pos+1] << 8) | bytes[pos+2];
+          }
+          pos += metaLen;
+        } else if (type === 0x90 && bytes[pos+1] > 0) { // Note On
+          var pitch = bytes[pos++], vel = bytes[pos++];
+          activeNotes[ch + '_' + pitch] = { pitch: pitch, velocity: vel, startTick: tick };
+        } else if (type === 0x80 || (type === 0x90 && bytes[pos+1] === 0)) { // Note Off
+          var offPitch = bytes[pos++]; pos++;
+          var key = ch + '_' + offPitch;
+          if (activeNotes[key]) {
+            var n = activeNotes[key];
+            var startBeat = n.startTick / ppq;
+            var durBeat = (tick - n.startTick) / ppq;
+            notes.push({ id: 'mid_' + notes.length, pitch: n.pitch, start: startBeat, duration: Math.max(0.0625, durBeat), velocity: n.velocity, channel: ch });
+            if (tick > maxTick) maxTick = tick;
+            delete activeNotes[key];
+          }
+        } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) { pos += 2; }
+        else if (type === 0xC0 || type === 0xD0) { pos += 1; }
+        else { pos++; }
+      }
+      pos = trackEnd;
+    }
+
+    var duration = (maxTick / ppq) || 4;
+    return { notes: notes, duration: duration, ppq: ppq };
   }
 
   function initView(moduleName, containerId) {
@@ -363,7 +521,18 @@ DAW.App = (function () {
   function addTrack(type, name) {
     if (!DAW.TrackManager) return null;
     var track = DAW.TrackManager.createTrack(type, name);
-    if (track) { setStatus('Added ' + type + ' track: ' + track.name); refreshViews(); }
+    if (track) {
+      if (type === 'midi' && DAW.Clip) {
+        var clip = DAW.Clip.createMIDIClip(track.id, 0, 8);
+        track.clips.push(clip);
+        if (!state.activeClip) {
+          state.activeClip = clip;
+          if (DAW.PianoRoll && DAW.PianoRoll.setClip) DAW.PianoRoll.setClip(clip);
+        }
+      }
+      setStatus('Added ' + type + ' track: ' + track.name);
+      refreshViews();
+    }
     return track;
   }
 

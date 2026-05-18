@@ -523,6 +523,7 @@ DAW.Timeline = (function () {
 
   // --- Main render ---
   function render() {
+    if (!canvas || !container) return;
     resizeCanvas();
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, canvasW, canvasH);

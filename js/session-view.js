@@ -102,6 +102,7 @@ DAW.SessionView = (function () {
   // ─── Drawing ────────────────────────────────────────────────────────
 
   function render() {
+    if (!canvas || !container) return;
     blinkPhase = (blinkPhase + 0.06) % (Math.PI * 2);
 
     ctx.fillStyle = COLORS.bg;

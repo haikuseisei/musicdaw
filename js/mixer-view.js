@@ -186,6 +186,7 @@ DAW.MixerView = (function () {
   // ─── Drawing ────────────────────────────────────────────────────────
 
   function render() {
+    if (!canvas || !container) return;
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, canvasW, canvasH);
 
